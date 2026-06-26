@@ -16,6 +16,9 @@
 
 % OpenType math font for proper math typography with XeTeX
 \usepackage{unicode-math}
+
+% Draw the itemize bullet from the math font (David CLM has no U+2022 glyph)
+\renewcommand{\labelitemi}{\ensuremath{\bullet}}
 \end_preamble
 \use_default_options true
 \begin_modules

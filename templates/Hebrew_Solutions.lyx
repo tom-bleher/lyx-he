@@ -20,6 +20,9 @@
 % Safety: define \texorpdfstring if hyperref isn't loaded (harmless otherwise)
 \providecommand{\texorpdfstring}[2]{#1}
 
+% Draw the itemize bullet from the math font (David CLM has no U+2022 glyph)
+\renewcommand{\labelitemi}{\ensuremath{\bullet}}
+
 % Display equation spacing
 \AtBeginDocument{\setlength\abovedisplayskip{6pt}}
 \AtBeginDocument{\setlength\belowdisplayskip{6pt}}
