@@ -26,6 +26,27 @@ ok()      { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
 fail()    { echo -e "  ${RED}✗${NC} $1"; }
 
+# Keep installer tools visible even after macOS path_helper rewrites PATH.
+path_append_if_dir() {
+    local dir="$1"
+
+    [ -d "$dir" ] || return 0
+    case ":$PATH:" in
+        *":$dir:"*) ;;
+        *) PATH="$PATH:$dir" ;;
+    esac
+}
+
+ensure_tool_paths() {
+    path_append_if_dir /opt/homebrew/bin
+    path_append_if_dir /opt/homebrew/sbin
+    path_append_if_dir /usr/local/bin
+    path_append_if_dir /Library/TeX/texbin
+    path_append_if_dir /opt/X11/bin
+    export PATH
+}
+ensure_tool_paths
+
 # ── Log file ────────────────────────────────────────
 LOG_FILE="$HOME/.lyx-he-install.log"
 echo "" >> "$LOG_FILE"
@@ -865,6 +886,7 @@ if ! command -v brew &>/dev/null; then
         elif [ -f /usr/local/bin/brew ]; then
             eval "$(/usr/local/bin/brew shellenv)"
         fi
+        ensure_tool_paths
 
         if ! command -v brew &>/dev/null; then
             fail "Homebrew installation failed"
@@ -1029,6 +1051,7 @@ if is_selected "mactex"; then
         info "Downloading ~6 GB — this will take a while"
         run_with_spinner "Installing MacTeX" brew install --cask mactex
         eval "$(/usr/libexec/path_helper)" 2>/dev/null
+        ensure_tool_paths
         if [ -f /Library/TeX/texbin/xelatex ]; then
             manifest_add cask mactex
             ok "MacTeX installed ${DIM}($(fmt_elapsed))${NC}"
@@ -1271,7 +1294,7 @@ fi
 # ── Run LyX Reconfigure ─────────────────────────────
 
 if is_selected "config" || is_selected "templates"; then
-    export PATH="/Library/TeX/texbin:$PATH"
+    ensure_tool_paths
     if ! command -v python3 &>/dev/null; then
         warn "python3 not found — run Tools > Reconfigure manually in LyX"
     elif [ -f "/Applications/LyX.app/Contents/Resources/configure.py" ]; then
@@ -1291,7 +1314,7 @@ fi
 header "Verification"
 
 eval "$(/usr/libexec/path_helper)" 2>/dev/null
-export PATH="/Library/TeX/texbin:$PATH"
+ensure_tool_paths
 
 _checks=0; _passed=0; _warnings=()
 
