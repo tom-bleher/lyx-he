@@ -288,14 +288,9 @@ lyx_version_gt() {
 }
 
 detect_lyx_dir() {
-    local dirs=()
     local d latest=""
 
-    shopt -s nullglob
-    dirs=("$HOME/Library/Application Support"/LyX-*)
-    shopt -u nullglob
-
-    for d in "${dirs[@]}"; do
+    for d in "$HOME/Library/Application Support"/LyX-*; do
         [ -d "$d" ] || continue
         if [ -z "$latest" ] || lyx_version_gt "$d" "$latest"; then
             latest="$d"
