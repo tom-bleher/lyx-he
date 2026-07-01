@@ -151,9 +151,12 @@ sudo_init() {
     if [ -t 0 ]; then
         info "Requesting administrator privileges (once)..."
         sudo -v || { fail "sudo authentication failed"; exit 1; }
-        # Refresh sudo timestamp every 50s in the background
-        while true; do sudo -n true; sleep 50; done 2>/dev/null &
+        # Refresh sudo timestamp every 50s in the background;
+        # exit if the installer is gone so a SIGKILL can't orphan the loop
+        while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 50; done 2>/dev/null &
         _sudo_keepalive_pid=$!
+    else
+        warn "No terminal for sudo — steps that need administrator privileges may fail."
     fi
 }
 
@@ -234,7 +237,9 @@ tui_checkbox() {
     while true; do
         IFS= read -rsn1 key 2>/dev/null || true
         if [ "$key" = $'\x1b' ]; then
-            IFS= read -rsn2 seq 2>/dev/null || true
+            # -t 1 so a bare Escape doesn't block (bash 3.2: integer timeouts only)
+            seq=""
+            IFS= read -rsn2 -t 1 seq 2>/dev/null || true
             case "$seq" in
                 '[A') [ "$cur" -gt 0 ] && cur=$((cur - 1)) ;;
                 '[B') [ "$cur" -lt $((n - 1)) ] && cur=$((cur + 1)) ;;
@@ -497,6 +502,11 @@ report_install_status() {
 
 # ── Uninstall flow ───────────────────────────────────
 if $UNINSTALL; then
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        fail "Uninstall is interactive and requires a terminal."
+        info  "Run: /bin/bash -c \"\$(curl -fsSL $REPO_RAW_BASE/install.sh)\" -- --uninstall"
+        exit 1
+    fi
     detect_lyx_dir
     header "Uninstall"
 
@@ -858,7 +868,8 @@ MTsxODk7MG0jG1swbRtbMzg7MjsyNTI7MTkwOzBtIxtbMG0bWzM4OzI7MjUzOzE5MTswbSMbWzBtG1sz
 ODsyOzE1ODsxMTg7MG09G1swbQogICAgICAgICAgICAgICAgICAgICAgICAgICAbWzM4OzI7MjY7MTk7
 MG0gG1swbRtbMzg7Mjs0MDszMDswbS4bWzBtG1szODsyOzU1OzQyOzBtLhtbMG0bWzM4OzI7NzY7NTc7
 MG06G1swbRtbMzg7MjszMjsyNDswbSAbWzBt'
-echo "$LYX_LOGO_B64" | base64 -d
+# -D (not -d) for pre-Ventura base64; never let a cosmetic logo abort the install
+echo "$LYX_LOGO_B64" | base64 -D 2>/dev/null || true
 echo ""
 echo -e "  ${BOLD}Hebrew Installer for macOS${NC}"
 echo -e "  ${DIM}Based on the Madlyx guide by Michael Kali${NC}"
@@ -1002,6 +1013,7 @@ done
 _needed_gb=1  # base overhead for fonts + config
 is_selected "mactex" && _needed_gb=$((_needed_gb + 8))
 _avail_gb=$(df -g "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
+[[ "$_avail_gb" =~ ^[0-9]+$ ]] || _avail_gb=""
 if [ -n "$_avail_gb" ] && [ "$_avail_gb" -lt "$_needed_gb" ]; then
     echo ""
     warn "Low disk space: ${_avail_gb} GB available, ~${_needed_gb} GB needed"
@@ -1090,7 +1102,7 @@ if is_selected "culmus"; then
     else
         CULMUS_TMP=$(mktemp -d)
         run_with_spinner "Downloading Culmus $CULMUS_VERSION" \
-            curl -sL -o "$CULMUS_TMP/culmus.tar.gz" \
+            curl -fsSL -o "$CULMUS_TMP/culmus.tar.gz" \
             "https://sourceforge.net/projects/culmus/files/culmus/$CULMUS_VERSION/culmus-$CULMUS_VERSION.tar.gz/download"
 
         CULMUS_SHA256="6daed104481007752a76905000e71c0093c591c8ef3017d1b18222c277fc52e3"
@@ -1118,6 +1130,10 @@ if is_selected "culmus"; then
         done
         rm -rf "$CULMUS_TMP"
 
+        if [ "$FONT_COUNT" -eq 0 ]; then
+            fail "No CLM font files found in the Culmus archive — layout may have changed"
+            exit 1
+        fi
         ok "Installed $FONT_COUNT Culmus font files ${DIM}($(fmt_elapsed))${NC}"
     fi
 fi
