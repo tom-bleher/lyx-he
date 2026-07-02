@@ -49,6 +49,10 @@ ensure_tool_paths
 
 # ── Log file ────────────────────────────────────────
 LOG_FILE="$HOME/.lyx-he-install.log"
+# Rotate once the log passes ~1 MB so it doesn't grow unbounded across runs
+if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+    mv "$LOG_FILE" "$LOG_FILE.old" 2>/dev/null || true
+fi
 echo "" >> "$LOG_FILE"
 echo "═══ lyx-he install — $(date) ═══" >> "$LOG_FILE"
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"; }
@@ -60,6 +64,11 @@ _bg_cmd_pid=""
 run_with_spinner() {
     local msg="$1"; shift
     local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    # Braille glyph slicing garbles under non-UTF-8 locales; fall back to ASCII
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;;
+        *) spin_chars="|/-\\" ;;
+    esac
     local cmd_start=$SECONDS
 
     log "Running: $*"
@@ -314,7 +323,7 @@ lyx_version_gt() {
 }
 
 detect_lyx_dir() {
-    local d latest=""
+    local d latest="" app_ver=""
 
     for d in "$HOME/Library/Application Support"/LyX-*; do
         [ -d "$d" ] || continue
@@ -323,7 +332,39 @@ detect_lyx_dir() {
         fi
     done
 
+    # No config dir yet (fresh machine): derive major.minor from the installed
+    # app so preferences land where LyX will actually look on first launch.
+    if [ -z "$latest" ]; then
+        app_ver=$(defaults read /Applications/LyX.app/Contents/Info \
+            CFBundleShortVersionString 2>/dev/null | cut -d. -f1-2) || true
+        case "$app_ver" in
+            [0-9]*.[0-9]*) latest="$HOME/Library/Application Support/LyX-$app_ver" ;;
+        esac
+    fi
+
     LYX_DIR="${latest:-$HOME/Library/Application Support/LyX-2.5}"
+}
+
+# ── Font detection ───────────────────────────────────
+# fc-list does not exist on a fresh macOS (no fontconfig; MacTeX doesn't ship
+# it either), so fall back to checking the font files directly. XeTeX finds
+# fonts via CoreText regardless.
+has_david_clm() {
+    fc-list 2>/dev/null | grep -qi "David CLM" && return 0
+    local f
+    for f in "$HOME/Library/Fonts"/DavidCLM*.[ot]tf /Library/Fonts/DavidCLM*.[ot]tf; do
+        [ -f "$f" ] && return 0
+    done
+    return 1
+}
+
+has_noto_hebrew() {
+    fc-list 2>/dev/null | grep -qi "Noto.*Hebrew" && return 0
+    local f
+    for f in "$HOME/Library/Fonts"/Noto*Hebrew* /Library/Fonts/Noto*Hebrew*; do
+        [ -f "$f" ] && return 0
+    done
+    return 1
 }
 
 # ── Flags ────────────────────────────────────────────
@@ -458,14 +499,14 @@ install_file_from_temp() {
     local tmp="$1"
     local dest="$2"
 
-    mkdir -p "$(dirname "$dest")" || return 2
+    mkdir -p "$(dirname "$dest")" || { rm -f "$tmp"; return 2; }
     if [ -f "$dest" ] && cmp -s "$tmp" "$dest"; then
         rm -f "$tmp" || return 2
         manifest_add file "$dest" || return 2
         return 1
     fi
-    backup_file "$dest" || return 2
-    mv "$tmp" "$dest" || return 2
+    backup_file "$dest" || { rm -f "$tmp"; return 2; }
+    mv "$tmp" "$dest" || { rm -f "$tmp"; return 2; }
     manifest_add file "$dest" || return 2
     return 0
 }
@@ -490,13 +531,14 @@ install_template_file() {
 
 report_install_status() {
     local rc="$1"
-    local changed_msg="$2"
-    local same_msg="$3"
+    local label="$2"
+    local changed_msg="$3"
+    local same_msg="$4"
 
     case "$rc" in
         0) ok "$changed_msg" ;;
         1) ok "$same_msg" ;;
-        *) fail "$changed_msg failed"; exit "$rc" ;;
+        *) fail "$label — install failed (see $LOG_FILE)"; exit "$rc" ;;
     esac
 }
 
@@ -514,28 +556,51 @@ if $UNINSTALL; then
     TUI_CHECKED=()
     UNINSTALL_ACTIONS=()
 
-    _config_backups=()
-    shopt -s nullglob
-    _config_backups=("$LYX_DIR"/preferences.bak.* "$LYX_DIR"/bind/user.bind.bak.*)
-    shopt -u nullglob
+    # Collect managed files from the manifest itself: entries may live under a
+    # different LyX-* dir than the one detected today (e.g. after a LyX upgrade).
+    _MANAGED_CONFIG=()
+    _MANAGED_TEMPLATES=()
+    if [ -f "$MANIFEST_FILE" ]; then
+        while IFS=$'\t' read -r _type _value; do
+            [ "$_type" = "file" ] || continue
+            case "$_value" in
+                */preferences|*/bind/user.bind|*/templates/defaults.lyx)
+                    _MANAGED_CONFIG+=("$_value") ;;
+                */templates/*.lyx)
+                    _MANAGED_TEMPLATES+=("$_value") ;;
+            esac
+        done < "$MANIFEST_FILE"
+    fi
+
+    # Backup-only files under the detected dir are restorable even without
+    # manifest entries; fold them into the config path list (deduped).
+    _CONFIG_PATHS=(${_MANAGED_CONFIG[@]+"${_MANAGED_CONFIG[@]}"})
+    for f in preferences bind/user.bind templates/defaults.lyx; do
+        _p="$LYX_DIR/$f"
+        _dup=false
+        for _q in ${_CONFIG_PATHS[@]+"${_CONFIG_PATHS[@]}"}; do
+            [ "$_q" = "$_p" ] && _dup=true
+        done
+        $_dup || _CONFIG_PATHS+=("$_p")
+    done
 
     _has_managed_config=false
-    for f in preferences bind/user.bind templates/defaults.lyx; do
-        manifest_has file "$LYX_DIR/$f" && _has_managed_config=true
+    _config_has_backups=false
+    shopt -s nullglob
+    for _p in "${_CONFIG_PATHS[@]}"; do
+        manifest_has file "$_p" && _has_managed_config=true
+        _b=("$_p".bak.*)
+        [ "${#_b[@]}" -gt 0 ] && _config_has_backups=true
     done
-    if $_has_managed_config || [ "${#_config_backups[@]}" -gt 0 ]; then
+    shopt -u nullglob
+    if $_has_managed_config || $_config_has_backups; then
         TUI_ITEMS+=("LyX preferences & keybindings (restore backups if available)")
         TUI_CHECKED+=(1)
         UNINSTALL_ACTIONS+=("config")
     fi
 
-    _has_managed_templates=false
-    for f in "${TEMPLATE_FILES[@]}"; do
-        [ "$f" = "templates/defaults.lyx" ] && continue
-        manifest_has file "$LYX_DIR/$f" && _has_managed_templates=true
-    done
-    if $_has_managed_templates; then
-        TUI_ITEMS+=("Managed LyX templates")
+    if [ "${#_MANAGED_TEMPLATES[@]}" -gt 0 ]; then
+        TUI_ITEMS+=("Managed LyX templates (${#_MANAGED_TEMPLATES[@]} files)")
         TUI_CHECKED+=(1)
         UNINSTALL_ACTIONS+=("templates")
     fi
@@ -566,6 +631,11 @@ if $UNINSTALL; then
         TUI_ITEMS+=("Managed LyX application")
         TUI_CHECKED+=(0)
         UNINSTALL_ACTIONS+=("lyx")
+    elif manifest_has app "/Applications/LyX.app" && [ -d "/Applications/LyX.app" ]; then
+        # Installed via the direct-download fallback, not Homebrew
+        TUI_ITEMS+=("Managed LyX application")
+        TUI_CHECKED+=(0)
+        UNINSTALL_ACTIONS+=("lyx-app")
     fi
 
     if manifest_has cask mactex && brew list --cask mactex &>/dev/null; then
@@ -613,8 +683,8 @@ if $UNINSTALL; then
     if $_uninstall_needs_sudo; then sudo_init; fi
 
     restore_or_remove_config_file() {
-        local rel="$1"
-        local path="$LYX_DIR/$rel"
+        local path="$1"
+        local rel="${path#"$HOME"/Library/Application Support/}"
         local backups=()
         local latest_backup=""
 
@@ -640,17 +710,14 @@ if $UNINSTALL; then
         [ "${TUI_CHECKED[i]}" = "1" ] || continue
         case "${UNINSTALL_ACTIONS[i]}" in
             config)
-                restore_or_remove_config_file preferences
-                restore_or_remove_config_file bind/user.bind
-                restore_or_remove_config_file templates/defaults.lyx
+                for _p in "${_CONFIG_PATHS[@]}"; do
+                    restore_or_remove_config_file "$_p"
+                done
                 ;;
             templates)
-                for f in "${TEMPLATE_FILES[@]}"; do
-                    [ "$f" = "templates/defaults.lyx" ] && continue
-                    if manifest_has file "$LYX_DIR/$f"; then
-                        [ -f "$LYX_DIR/$f" ] && rm "$LYX_DIR/$f" && ok "Removed $f"
-                        manifest_remove file "$LYX_DIR/$f"
-                    fi
+                for _p in ${_MANAGED_TEMPLATES[@]+"${_MANAGED_TEMPLATES[@]}"}; do
+                    [ -f "$_p" ] && rm "$_p" && ok "Removed ${_p#"$HOME"/Library/Application Support/}"
+                    manifest_remove file "$_p"
                 done
                 ;;
             culmus)
@@ -675,6 +742,14 @@ if $UNINSTALL; then
                     manifest_remove cask lyx
                 else
                     warn "Failed to remove LyX via Homebrew"
+                fi
+                ;;
+            lyx-app)
+                if rm -rf "/Applications/LyX.app" 2>/dev/null; then
+                    ok "Removed LyX"
+                    manifest_remove app "/Applications/LyX.app"
+                else
+                    warn "Failed to remove /Applications/LyX.app"
                 fi
                 ;;
             mactex)
@@ -918,7 +993,7 @@ detect_lyx_dir
 
 _HAS_MACTEX=false; [ -f /Library/TeX/texbin/xelatex ] && _HAS_MACTEX=true
 _HAS_LYX=false;    [ -d "/Applications/LyX.app" ]     && _HAS_LYX=true
-_HAS_CULMUS=false; if fc-list 2>/dev/null | grep -qi "David CLM"; then _HAS_CULMUS=true; fi
+_HAS_CULMUS=false; if has_david_clm; then _HAS_CULMUS=true; fi
 CULMUS_VERSION="0.140"
 
 NOTO_FONTS=(font-noto-sans-hebrew font-noto-serif-hebrew font-noto-rashi-hebrew)
@@ -1011,7 +1086,8 @@ done
 # ── Disk space check ─────────────────────────────────
 
 _needed_gb=1  # base overhead for fonts + config
-is_selected "mactex" && _needed_gb=$((_needed_gb + 8))
+# Only count MacTeX when it will actually be installed (selected but present is a skip)
+if is_selected "mactex" && ! $_HAS_MACTEX; then _needed_gb=$((_needed_gb + 8)); fi
 _avail_gb=$(df -g "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
 [[ "$_avail_gb" =~ ^[0-9]+$ ]] || _avail_gb=""
 if [ -n "$_avail_gb" ] && [ "$_avail_gb" -lt "$_needed_gb" ]; then
@@ -1061,11 +1137,16 @@ if is_selected "mactex"; then
         ok "MacTeX already installed — skipped"
     else
         info "Downloading ~6 GB — this will take a while"
-        run_with_spinner "Installing MacTeX" brew install --cask mactex
+        if ! run_with_spinner "Installing MacTeX" brew install --cask mactex; then
+            fail "MacTeX installation failed. Try again, or install manually from https://www.tug.org/mactex/"
+            exit 1
+        fi
+        # Track the cask right away — even if the PATH refresh below fails,
+        # uninstall should still know we installed it.
+        manifest_add cask mactex
         eval "$(/usr/libexec/path_helper)" 2>/dev/null
         ensure_tool_paths
         if [ -f /Library/TeX/texbin/xelatex ]; then
-            manifest_add cask mactex
             ok "MacTeX installed ${DIM}($(fmt_elapsed))${NC}"
         else
             warn "MacTeX installed but xelatex not on PATH. Restart your terminal."
@@ -1075,16 +1156,70 @@ fi
 
 # ── Install: LyX ────────────────────────────────────
 
+# Direct-download fallback for when the Homebrew cask is unavailable.
+# Same universal (x86_64 + arm64) dmg and sha256 the cask pins.
+LYX_DMG_VERSION="2.5.1"
+LYX_DMG_SHA256="1c3a8cbf7c81e9d06b53e1ba291119363881b347722816cf53b6b912b3589370"
+LYX_DMG_URL="https://ftp.lip6.fr/pub/lyx/bin/${LYX_DMG_VERSION}/LyX-${LYX_DMG_VERSION}+qt6-x86_64-arm64-cocoa.dmg"
+
+install_lyx_direct() {
+    local dmg_tmp mnt rc=0
+
+    dmg_tmp=$(mktemp -d)
+    if ! run_with_spinner "Downloading LyX ${LYX_DMG_VERSION} from lyx.org mirror" \
+        curl -fsSL -o "$dmg_tmp/lyx.dmg" "$LYX_DMG_URL"; then
+        rm -rf "$dmg_tmp"
+        return 1
+    fi
+
+    if ! echo "$LYX_DMG_SHA256  $dmg_tmp/lyx.dmg" | shasum -a 256 -c - >/dev/null 2>&1; then
+        fail "LyX dmg checksum mismatch — refusing to install unverified download"
+        rm -rf "$dmg_tmp"
+        return 1
+    fi
+
+    mnt="$dmg_tmp/mnt"
+    mkdir -p "$mnt"
+    if ! hdiutil attach "$dmg_tmp/lyx.dmg" -mountpoint "$mnt" -nobrowse -quiet >> "$LOG_FILE" 2>&1; then
+        rm -rf "$dmg_tmp"
+        return 1
+    fi
+
+    if [ -d "$mnt/LyX.app" ]; then
+        [ -d "/Applications/LyX.app" ] && rm -rf "/Applications/LyX.app"
+        cp -R "$mnt/LyX.app" /Applications/ || rc=1
+    else
+        rc=1
+    fi
+
+    hdiutil detach "$mnt" -quiet >> "$LOG_FILE" 2>&1 || true
+    rm -rf "$dmg_tmp"
+    return "$rc"
+}
+
 if is_selected "lyx"; then
     step "LyX"
     if $_HAS_LYX; then
         ok "LyX already installed — skipped"
     else
-        # NOTE: The LyX Homebrew cask is deprecated (Gatekeeper issue, disabled Sept 2026).
-        # If this fails in the future, download directly from https://www.lyx.org/Download
-        run_with_spinner "Installing LyX" brew install --cask lyx
+        # The LyX Homebrew cask is deprecated (Gatekeeper issue; disabled after
+        # Sept 2026). Fall back to a checksummed download from the official mirror.
+        _lyx_via_cask=false
+        if run_with_spinner "Installing LyX" brew install --cask lyx; then
+            _lyx_via_cask=true
+        else
+            warn "Homebrew LyX cask failed — falling back to direct download"
+            if ! install_lyx_direct; then
+                fail "LyX installation failed. Download manually from https://www.lyx.org/Download"
+                exit 1
+            fi
+        fi
         if [ -d "/Applications/LyX.app" ]; then
-            manifest_add cask lyx
+            if $_lyx_via_cask; then
+                manifest_add cask lyx
+            else
+                manifest_add app "/Applications/LyX.app"
+            fi
             ok "LyX installed ${DIM}($(fmt_elapsed))${NC}"
         else
             fail "LyX installation failed. Download manually from https://www.lyx.org/Download"
@@ -1101,9 +1236,12 @@ if is_selected "culmus"; then
         ok "Culmus Hebrew fonts already installed — skipped"
     else
         CULMUS_TMP=$(mktemp -d)
-        run_with_spinner "Downloading Culmus $CULMUS_VERSION" \
+        if ! run_with_spinner "Downloading Culmus $CULMUS_VERSION" \
             curl -fsSL -o "$CULMUS_TMP/culmus.tar.gz" \
-            "https://sourceforge.net/projects/culmus/files/culmus/$CULMUS_VERSION/culmus-$CULMUS_VERSION.tar.gz/download"
+            "https://sourceforge.net/projects/culmus/files/culmus/$CULMUS_VERSION/culmus-$CULMUS_VERSION.tar.gz/download"; then
+            fail "Culmus download failed — try manually from https://culmus.sourceforge.io/"
+            exit 1
+        fi
 
         CULMUS_SHA256="6daed104481007752a76905000e71c0093c591c8ef3017d1b18222c277fc52e3"
         if ! echo "$CULMUS_SHA256  $CULMUS_TMP/culmus.tar.gz" | shasum -a 256 -c - >/dev/null 2>&1; then
@@ -1119,7 +1257,10 @@ if is_selected "culmus"; then
             exit 1
         fi
 
-        tar xzf "$CULMUS_TMP/culmus.tar.gz" -C "$CULMUS_TMP"
+        if ! tar xzf "$CULMUS_TMP/culmus.tar.gz" -C "$CULMUS_TMP"; then
+            fail "Failed to extract Culmus archive"
+            exit 1
+        fi
         mkdir -p "$HOME/Library/Fonts"
         FONT_COUNT=0
         for font in "$CULMUS_TMP"/culmus-"$CULMUS_VERSION"/*CLM*.otf "$CULMUS_TMP"/culmus-"$CULMUS_VERSION"/*CLM*.ttf; do
@@ -1159,6 +1300,9 @@ fi
 
 if is_selected "config"; then
     step "LyX preferences & keybindings"
+    # Re-detect: on a fresh machine LyX was only just installed, so the
+    # app-version-derived directory is only knowable now.
+    detect_lyx_dir
     mkdir -p "$LYX_DIR/bind" "$LYX_DIR/templates"
 
     CONFIG_TARGETS=(
@@ -1231,7 +1375,8 @@ EOF
         else
             _install_rc=$?
         fi
-        report_install_status "$_install_rc" "Preferences written" "Preferences already up to date"
+        report_install_status "$_install_rc" "Preferences" \
+            "Preferences written" "Preferences already up to date"
 
         _bind_tmp=$(mktemp)
         # Keybindings — F12 for Hebrew (Madlyx guide, page 16)
@@ -1259,7 +1404,7 @@ EOF
         else
             _install_rc=$?
         fi
-        report_install_status "$_install_rc" \
+        report_install_status "$_install_rc" "Keybindings" \
             "Keybindings written (F12 = Hebrew, Shift+F12 = English)" \
             "Keybindings already up to date"
 
@@ -1268,7 +1413,7 @@ EOF
         else
             _install_rc=$?
         fi
-        report_install_status "$_install_rc" \
+        report_install_status "$_install_rc" "defaults.lyx" \
             "defaults.lyx created (Cmd+N defaults to Hebrew RTL)" \
             "defaults.lyx already up to date"
     else
@@ -1280,6 +1425,7 @@ fi
 
 if is_selected "templates"; then
     step "Document templates"
+    detect_lyx_dir
     mkdir -p "$LYX_DIR/templates"
 
     TEMPLATE_TARGETS=()
@@ -1300,7 +1446,7 @@ if is_selected "templates"; then
             else
                 _install_rc=$?
             fi
-            report_install_status "$_install_rc" \
+            report_install_status "$_install_rc" "$(basename "$f") template" \
                 "$(basename "$f") template installed" \
                 "$(basename "$f") template already up to date"
         done
@@ -1354,10 +1500,10 @@ if is_selected "lyx" || [ -d "/Applications/LyX.app" ]; then
     _check "LyX: not found in /Applications" test -d "/Applications/LyX.app"
 fi
 if is_selected "culmus"; then
-    _check "David CLM font: not found by fc-list" bash -c 'fc-list 2>/dev/null | grep -qi "David CLM"'
+    _check "David CLM font: not found" has_david_clm
 fi
 if is_selected "noto"; then
-    _check "Noto Hebrew fonts: not found by fc-list" bash -c 'fc-list 2>/dev/null | grep -qi "Noto.*Hebrew"'
+    _check "Noto Hebrew fonts: not found" has_noto_hebrew
 fi
 
 if is_selected "config"; then
@@ -1375,7 +1521,7 @@ if is_selected "templates"; then
 fi
 
 # Hebrew XeTeX compilation test
-if command -v xelatex &>/dev/null && fc-list 2>/dev/null | grep -qi "David CLM"; then
+if command -v xelatex &>/dev/null && has_david_clm; then
     _checks=$((_checks + 1))
     TEST_DIR=$(mktemp -d)
     cat > "$TEST_DIR/test.tex" << 'TEX'
@@ -1397,7 +1543,9 @@ Hello World! \textit{Italic} \textbf{Bold}
 \end{english}
 \end{document}
 TEX
-    if xelatex -interaction=nonstopmode -output-directory="$TEST_DIR" "$TEST_DIR/test.tex" &>/dev/null; then
+    # First xelatex run can pause 10-30s building font caches — show progress
+    if run_with_spinner "Testing Hebrew XeTeX compilation" \
+        xelatex -interaction=nonstopmode -output-directory="$TEST_DIR" "$TEST_DIR/test.tex"; then
         _passed=$((_passed + 1))
     else
         _warnings+=("Hebrew XeTeX compilation: FAILED")
