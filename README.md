@@ -98,9 +98,14 @@ Then pick **d42ker** under **Preferences > Look & Feel > Colors**.
 Structural chrome (page breaks, depth bars, inset frames, layout markers) is
 neutral gray rather than the default blue, so the canvas stays quiet; color is
 reserved for meaning — blue for math, orange for ERT, red for links and errors,
-green for index and tracked additions. Accents are built in OKLCH at L=0.53
-with the highest in-gamut chroma, which puts every one of them near 5:1 on the
-page background in both modes.
+green for index and tracked additions.
+
+Accents are built in OKLCH at the highest in-gamut chroma. Light sits at
+L=0.53, the level Radix Colors and GitHub Primer both use for text on white.
+Dark lightness is set by APCA (Lc 60 floor) rather than by WCAG 2 ratios, which
+flatter dark themes — the accents read 5:1 there but only Lc 40 before the fix.
+The five change-tracking author colors are staggered in lightness so they stay
+separable under protanopia, deuteranopia and tritanopia, where hue collapses.
 
 ## Uninstall
 
