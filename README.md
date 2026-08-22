@@ -100,12 +100,15 @@ neutral gray rather than the default blue, so the canvas stays quiet; color is
 reserved for meaning — blue for math, orange for ERT, red for links and errors,
 green for index and tracked additions.
 
-Accents are built in OKLCH at the highest in-gamut chroma. Light sits at
-L=0.53, the level Radix Colors and GitHub Primer both use for text on white.
-Dark lightness is set by APCA (Lc 60 floor) rather than by WCAG 2 ratios, which
-flatter dark themes — the accents read 5:1 there but only Lc 40 before the fix.
-The five change-tracking author colors are staggered in lightness so they stay
-separable under protanopia, deuteranopia and tritanopia, where hue collapses.
+Accents are built in OKLCH at the highest in-gamut chroma, with lightness set
+by APCA rather than by eye. LyX draws most labels in a Small font, so both
+sides target the small-text band: light at L=0.47 (Lc 80–84), dark raised until
+Lc 68. WCAG 2 ratios flatter dark themes — the same accents read 5:1 there at
+lightnesses APCA scores near 40. The hues match the consensus of Modus,
+Catppuccin, Everforest, Solarized and Primer, which all place blue at 236–263,
+red at 20–29, orange at 40–59 and green at 118–148. The five change-tracking
+author colors are staggered in lightness so they stay separable under
+protanopia, deuteranopia and tritanopia, where hue collapses.
 
 ## Uninstall
 
