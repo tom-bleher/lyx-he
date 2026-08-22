@@ -1,0 +1,132 @@
+#LyX version: 2.5.2
+#
+#   This is a definition file of a color theme "D42ker" of LyX
+#
+#   A clean, minimal theme: zero-saturation neutral scale, one warm red accent,
+#   a few muted hues reserved for math, labels and change tracking. Inspired by
+#   the D42ker GitHub theme for Typora
+#   (Leon Wong, github.com/l3ony2k/Typora-D42ker-Github-theme).
+#
+#   Palette                light      dark
+#     background           #fdfdfd    #191919
+#     surface              #f2f2f2    #212121
+#     surface raised       #e8e8e8    #2a2a2a
+#     rule / frame         #dcdcdc    #404040
+#     muted                #9a9a9a    #808080
+#     dim                  #6e6e6e    #a7a7a7
+#     foreground           #262626    #d0d0d0
+#     accent red           #b63a3f    #d36c6b     h  22
+#     blue                 #016fbb    #5697d5     h 249
+#     green                #317f38    #74b075     h 145
+#     violet               #5d5bc5    #8e93e1     h 280
+#     orange               #a45300    #be753f     h  55
+#     teal                 #027c7d    #63b4b5     h 196
+#     note background      #f6f1e3    #2b2721
+#
+#   Accents are built in OKLCH: light L=0.53 at the highest in-gamut chroma
+#   (C 0.13-0.16, ~5:1 on white), dark keeps its lightness with chroma raised
+#   to ~0.11-0.13. That target matches the text steps of Radix Colors (step 11)
+#   and GitHub Primer (step 5), both of which sit at L~0.53, C~0.13-0.20.
+#
+#   Order below: canvas, selection, buttons/frames, insets, notes, layout
+#   markers, math, labels, change tracking, feedback, tables.
+#
+#   Note: "selectionmath" is the *text* color of selected math, not a
+#   background (the background is "selection"); "deletedtextmodifier" is a
+#   brightness a deleted-text color is blended toward, not a color as such.
+#
+#   Author: Tom Bleher ()
+#
+#   Syntax: \set_color "color name" "light color" "dark color"
+#
+\set_color "background" "#fdfdfd" "#191919"
+\set_color "foreground" "#262626" "#d0d0d0"
+\set_color "foreground_inverted" "#fdfdfd" "#191919"
+\set_color "cursor" "#262626" "#d0d0d0"
+\set_color "cursor_inverted" "#fdfdfd" "#191919"
+\set_color "bottomarea" "#f2f2f2" "#212121"
+\set_color "graphicsbg" "#fdfdfd" "#191919"
+\set_color "shaded" "#f2f2f2" "#212121"
+\set_color "listingsbg" "#f7f7f7" "#1f1f1f"
+\set_color "selection" "#e2d7d7" "#663f3f"
+\set_color "selectiontext" "#1a1a1a" "#f0f0f0"
+\set_color "selectionmath" "#004a81" "#c5e2ff"
+\set_color "buttonbg" "#f2f2f2" "#212121"
+\set_color "buttonhoverbg" "#e8e8e8" "#2f2f2f"
+\set_color "buttonframe" "#dcdcdc" "#404040"
+\set_color "commandbg" "#f2f2f2" "#212121"
+\set_color "commandframe" "#dcdcdc" "#404040"
+\set_color "command" "#262626" "#d0d0d0"
+\set_color "commandbg_broken" "#f3e2e2" "#3a2626"
+\set_color "buttonhoverbg_broken" "#ecd6d6" "#472d2d"
+\set_color "commandframe_broken" "#b63a3f" "#d36c6b"
+\set_color "command_broken" "#831922" "#f6c2bf"
+\set_color "insetbg" "#f2f2f2" "#212121"
+\set_color "insetframe" "#dcdcdc" "#404040"
+\set_color "insetlabel" "#6e6e6e" "#a7a7a7"
+\set_color "collapsible" "#6e6e6e" "#a7a7a7"
+\set_color "collapsibleframe" "#dcdcdc" "#404040"
+\set_color "greyedoutbg" "#f2f2f2" "#212121"
+\set_color "greyedout" "#6e6e6e" "#a7a7a7"
+\set_color "greyedouttext" "#9a9a9a" "#808080"
+\set_color "phantomtext" "#9a9a9a" "#808080"
+\set_color "notebg" "#f6f1e3" "#2b2721"
+\set_color "note" "#262626" "#d0d0d0"
+\set_color "commentbg" "#f6f1e3" "#2b2721"
+\set_color "comment" "#262626" "#d0d0d0"
+\set_color "added_space" "#9a9a9a" "#808080"
+\set_color "appendix" "#9a9a9a" "#808080"
+\set_color "depthbar" "#cccccc" "#4a4a4a"
+\set_color "eolmarker" "#9a9a9a" "#808080"
+\set_color "newpage" "#9a9a9a" "#808080"
+\set_color "pagebreak" "#9a9a9a" "#808080"
+\set_color "paragraphmarker" "#dcdcdc" "#404040"
+\set_color "special" "#9a9a9a" "#808080"
+\set_color "scroll" "#b63a3f" "#d36c6b"
+\set_color "bookmark" "#b63a3f" "#d36c6b"
+\set_color "math" "#016fbb" "#5697d5"
+\set_color "mathbg" "#fdfdfd" "#191919"
+\set_color "mathframe" "#016fbb" "#5697d5"
+\set_color "mathline" "#016fbb" "#5697d5"
+\set_color "mathcorners" "#dcdcdc" "#3a3a3a"
+\set_color "mathmacrobg" "#fdfdfd" "#191919"
+\set_color "mathmacroblend" "#262626" "#d0d0d0"
+\set_color "mathmacroframe" "#dcdcdc" "#404040"
+\set_color "mathmacrohoverbg" "#e8e8e8" "#2a2a2a"
+\set_color "mathmacrolabel" "#9a9a9a" "#808080"
+\set_color "mathmacronewarg" "#262626" "#d0d0d0"
+\set_color "mathmacrooldarg" "#9a9a9a" "#808080"
+\set_color "latex" "#a45300" "#be753f"
+\set_color "language" "#016fbb" "#5697d5"
+\set_color "footlabel" "#016fbb" "#5697d5"
+\set_color "indexlabel" "#317f38" "#74b075"
+\set_color "nomlabel" "#a45300" "#be753f"
+\set_color "branchlabel" "#a45300" "#be753f"
+\set_color "marginlabel" "#5d5bc5" "#8e93e1"
+\set_color "urllabel" "#b63a3f" "#d36c6b"
+\set_color "urltext" "#b63a3f" "#d36c6b"
+\set_color "textlabel1" "#016fbb" "#5697d5"
+\set_color "textlabel2" "#317f38" "#74b075"
+\set_color "textlabel3" "#5d5bc5" "#8e93e1"
+\set_color "changebar" "#016fbb" "#5697d5"
+\set_color "addedtext" "#317f38" "#74b075"
+\set_color "deletedtext" "#b63a3f" "#d36c6b"
+\set_color "deletedtextmodifier" "#f2f2f2" "#6e6e6e"
+\set_color "changedtextauthor1" "#016fbb" "#5697d5"
+\set_color "changedtextauthor2" "#5d5bc5" "#8e93e1"
+\set_color "changedtextauthor3" "#b63a3f" "#d36c6b"
+\set_color "changedtextauthor4" "#a45300" "#be753f"
+\set_color "changedtextauthor5" "#317f38" "#74b075"
+\set_color "changedtextcomparison" "#027c7d" "#63b4b5"
+\set_color "error" "#b63a3f" "#d36c6b"
+\set_color "regexpframe" "#317f38" "#74b075"
+\set_color "inlinecompletion" "#9a9a9a" "#808080"
+\set_color "nonuniqueinlinecompletion" "#dcdcdc" "#404040"
+\set_color "preview" "#262626" "#d0d0d0"
+\set_color "previewframe" "#dcdcdc" "#404040"
+\set_color "preeditbg" "#fdfdfd" "#191919"
+\set_color "preedittext" "#262626" "#d0d0d0"
+\set_color "preeditfocus" "#e8e8e8" "#2a2a2a"
+\set_color "preeditfocustext" "#1a1a1a" "#f0f0f0"
+\set_color "tabularline" "#b0b0b0" "#5a5a5a"
+\set_color "tabularonoffline" "#c9c9c9" "#4a4a4a"

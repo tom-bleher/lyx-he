@@ -84,6 +84,24 @@ When installed with the one-line command, template files are downloaded from thi
 </tr>
 </table>
 
+## Color Theme
+
+A clean, minimal LyX color theme with light and dark variants, built on a
+zero-saturation neutral scale with one warm red accent.
+
+```bash
+cp themes/d42ker.theme ~/Library/Application\ Support/LyX-2.5/themes/
+```
+
+Then pick **d42ker** under **Preferences > Look & Feel > Colors**.
+
+Structural chrome (page breaks, depth bars, inset frames, layout markers) is
+neutral gray rather than the default blue, so the canvas stays quiet; color is
+reserved for meaning — blue for math, orange for ERT, red for links and errors,
+green for index and tracked additions. Accents are built in OKLCH at L=0.53
+with the highest in-gamut chroma, which puts every one of them near 5:1 on the
+page background in both modes.
+
 ## Uninstall
 
 ```bash
@@ -141,6 +159,7 @@ Contributions welcome — open an issue or PR.
 - [Bruce Pourciau](https://wiki.lyx.org/Examples/CV) (CV template)
 - [Culmus Project](https://culmus.sourceforge.io/)
 - [LyX](https://www.lyx.org/)
+- [D42ker GitHub theme](https://github.com/l3ony2k/Typora-D42ker-Github-theme) by Leon Wong (color theme inspiration)
 
 ## License
 
