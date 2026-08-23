@@ -46,6 +46,7 @@ cd lyx-he
 - **F12** / **Shift+F12** for Hebrew/English toggle, **Cmd+E/I** for emphasis
 - Math auto-completion, OpenType math (STIX Two), hyperref cross-references
 - 5 document templates (article, solutions, CV) plus Hebrew defaults for new files
+- **d42ker** color theme installed and selected by default (LyX 2.5+)
 
 <p align="center">
   <img src="screenshots/component-picker.png" alt="Interactive component picker" width="570">
@@ -87,13 +88,18 @@ When installed with the one-line command, template files are downloaded from thi
 ## Color Theme
 
 A clean, minimal LyX color theme with light and dark variants, built on a
-zero-saturation neutral scale with one warm red accent.
+zero-saturation neutral scale with one warm red accent. The installer copies it
+into the LyX user directory and selects it, so on LyX 2.5+ there is nothing to
+do. On LyX 2.4 it is skipped — color themes did not exist yet.
+
+To install it by hand, or into another LyX:
 
 ```bash
 cp themes/d42ker.theme ~/Library/Application\ Support/LyX-2.5/themes/
 ```
 
-Then pick **d42ker** under **Preferences > Look & Feel > Colors**.
+Then pick **d42ker** under **Preferences > Look & Feel > Colors**. Switching to
+another theme is just picking one there; the file stays put.
 
 Structural chrome (page breaks, depth bars, inset frames, layout markers) is
 neutral gray rather than the default blue, so the canvas stays quiet; color is
