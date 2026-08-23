@@ -345,6 +345,12 @@ detect_lyx_dir() {
     LYX_DIR="${latest:-$HOME/Library/Application Support/LyX-2.5}"
 }
 
+# Color themes (themes/*.theme and \ui_theme) arrived in LyX 2.5; on 2.4 the
+# theme is skipped rather than leaving a stray file and an unknown setting.
+lyx_supports_themes() {
+    lyx_version_gt "$LYX_DIR" "/LyX-2.4.99"
+}
+
 # ── Font detection ───────────────────────────────────
 # fc-list does not exist on a fresh macOS (no fontconfig; MacTeX doesn't ship
 # it either), so fall back to checking the font files directly. XeTeX finds
@@ -390,6 +396,10 @@ TEMPLATE_FILES=(
     templates/Hebrew_Solutions.lyx  templates/English_Solutions.lyx
     templates/English_CV.lyx
 )
+
+# LyX names a theme after its file, so THEME_NAME must match THEME_FILE's stem.
+THEME_NAME="d42ker"
+THEME_FILE="$THEME_NAME.theme"
 
 REPO_RAW_BASE="${LYX_HE_RAW_BASE:-https://raw.githubusercontent.com/tom-bleher/lyx-he/main}"
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
@@ -564,7 +574,7 @@ if $UNINSTALL; then
         while IFS=$'\t' read -r _type _value; do
             [ "$_type" = "file" ] || continue
             case "$_value" in
-                */preferences|*/bind/user.bind|*/templates/defaults.lyx)
+                */preferences|*/bind/user.bind|*/templates/defaults.lyx|*/themes/*.theme)
                     _MANAGED_CONFIG+=("$_value") ;;
                 */templates/*.lyx)
                     _MANAGED_TEMPLATES+=("$_value") ;;
@@ -575,7 +585,7 @@ if $UNINSTALL; then
     # Backup-only files under the detected dir are restorable even without
     # manifest entries; fold them into the config path list (deduped).
     _CONFIG_PATHS=(${_MANAGED_CONFIG[@]+"${_MANAGED_CONFIG[@]}"})
-    for f in preferences bind/user.bind templates/defaults.lyx; do
+    for f in preferences bind/user.bind templates/defaults.lyx "themes/$THEME_FILE"; do
         _p="$LYX_DIR/$f"
         _dup=false
         for _q in ${_CONFIG_PATHS[@]+"${_CONFIG_PATHS[@]}"}; do
@@ -594,7 +604,7 @@ if $UNINSTALL; then
     done
     shopt -u nullglob
     if $_has_managed_config || $_config_has_backups; then
-        TUI_ITEMS+=("LyX preferences & keybindings (restore backups if available)")
+        TUI_ITEMS+=("LyX preferences, keybindings & color theme (restore backups if available)")
         TUI_CHECKED+=(1)
         UNINSTALL_ACTIONS+=("config")
     fi
@@ -1029,7 +1039,7 @@ TUI_ITEMS+=("$_label"); TUI_CHECKED+=(1); INSTALL_ACTIONS+=("culmus")
 _label="Noto Hebrew fonts (Sans, Serif, Rashi)";         $_HAS_NOTO && _label+=" (installed)"
 TUI_ITEMS+=("$_label"); TUI_CHECKED+=(1); INSTALL_ACTIONS+=("noto")
 
-_label="LyX preferences & keybindings";                  $_HAS_CONFIG && _label+=" (installed)"
+_label="LyX preferences, keybindings & color theme";     $_HAS_CONFIG && _label+=" (installed)"
 TUI_ITEMS+=("$_label"); TUI_CHECKED+=(1); INSTALL_ACTIONS+=("config")
 
 _label="Document templates (articles, solutions, CV)";   $_HAS_TEMPLATES && _label+=" (installed)"
@@ -1071,7 +1081,7 @@ _describe_action() {
         lyx)    echo "LyX — WYSIWYM document editor" ;;
         culmus) echo "Culmus Hebrew fonts ${DIM}(David CLM, Miriam, Frank Ruehl, etc.)${NC}" ;;
         noto)   echo "Noto Hebrew fonts ${DIM}(Sans, Serif, Rashi)${NC}" ;;
-        config)    echo "LyX preferences & keybindings ${DIM}(F12 Hebrew toggle, fonts, etc.)${NC}" ;;
+        config)    echo "LyX preferences, keybindings & color theme ${DIM}(F12 Hebrew toggle, fonts, d42ker colors)${NC}" ;;
         templates) echo "Document templates ${DIM}(articles, solutions, CV)${NC}" ;;
     esac
 }
@@ -1299,7 +1309,7 @@ fi
 # ── Install: LyX configuration ──────────────────────
 
 if is_selected "config"; then
-    step "LyX preferences & keybindings"
+    step "LyX preferences, keybindings & color theme"
     # Re-detect: on a fresh machine LyX was only just installed, so the
     # app-version-derived directory is only knowable now.
     detect_lyx_dir
@@ -1310,8 +1320,12 @@ if is_selected "config"; then
         "$LYX_DIR/bind/user.bind"
         "$LYX_DIR/templates/defaults.lyx"
     )
+    if lyx_supports_themes; then
+        mkdir -p "$LYX_DIR/themes"
+        CONFIG_TARGETS+=("$LYX_DIR/themes/$THEME_FILE")
+    fi
 
-    if confirm_overwrite "LyX preferences & keybindings" "${CONFIG_TARGETS[@]}"; then
+    if confirm_overwrite "LyX preferences, keybindings & color theme" "${CONFIG_TARGETS[@]}"; then
         _prefs_tmp=$(mktemp)
         # Preferences — only non-default settings (matches LyX 2.4/2.5 on macOS)
         cat > "$_prefs_tmp" << 'EOF'
@@ -1370,6 +1384,17 @@ Format 38
 \completion_minlength 3
 EOF
 
+        if lyx_supports_themes; then
+            cat >> "$_prefs_tmp" << EOF
+
+#
+# COLOR THEME SECTION ###############################
+#
+
+\\ui_theme "${THEME_NAME}"
+EOF
+        fi
+
         if install_file_from_temp "$_prefs_tmp" "$LYX_DIR/preferences"; then
             _install_rc=0
         else
@@ -1416,8 +1441,19 @@ EOF
         report_install_status "$_install_rc" "defaults.lyx" \
             "defaults.lyx created (Cmd+N defaults to Hebrew RTL)" \
             "defaults.lyx already up to date"
+
+        if lyx_supports_themes; then
+            if install_template_file "themes/$THEME_FILE"; then
+                _install_rc=0
+            else
+                _install_rc=$?
+            fi
+            report_install_status "$_install_rc" "Color theme" \
+                "Color theme installed and selected ($THEME_NAME)" \
+                "Color theme already up to date"
+        fi
     else
-        ok "Skipped LyX preferences & keybindings"
+        ok "Skipped LyX preferences, keybindings & color theme"
     fi
 fi
 
@@ -1511,6 +1547,10 @@ if is_selected "config"; then
     for f in preferences bind/user.bind templates/defaults.lyx; do
         _check "Missing config: $f" test -f "$LYX_DIR/$f"
     done
+    if lyx_supports_themes; then
+        _check "Missing color theme: themes/$THEME_FILE" \
+            test -f "$LYX_DIR/themes/$THEME_FILE"
+    fi
 fi
 if is_selected "templates"; then
     detect_lyx_dir
