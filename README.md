@@ -84,6 +84,32 @@ When installed with the one-line command, template files are downloaded from thi
 </tr>
 </table>
 
+## Color Theme
+
+A clean, minimal LyX color theme with light and dark variants, built on a
+zero-saturation neutral scale with one warm red accent.
+
+```bash
+cp themes/d42ker.theme ~/Library/Application\ Support/LyX-2.5/themes/
+```
+
+Then pick **d42ker** under **Preferences > Look & Feel > Colors**.
+
+Structural chrome (page breaks, depth bars, inset frames, layout markers) is
+neutral gray rather than the default blue, so the canvas stays quiet; color is
+reserved for meaning — blue for math, orange for ERT, red for links and errors,
+green for index and tracked additions.
+
+Accents are built in OKLCH at the highest in-gamut chroma, with lightness set
+by APCA rather than by eye. LyX draws most labels in a Small font, so both
+sides target the small-text band: light at L=0.47 (Lc 80–84), dark raised until
+Lc 68. WCAG 2 ratios flatter dark themes — the same accents read 5:1 there at
+lightnesses APCA scores near 40. The hues match the consensus of Modus,
+Catppuccin, Everforest, Solarized and Primer, which all place blue at 236–263,
+red at 20–29, orange at 40–59 and green at 118–148. The five change-tracking
+author colors are staggered in lightness so they stay separable under
+protanopia, deuteranopia and tritanopia, where hue collapses.
+
 ## Uninstall
 
 ```bash
@@ -141,6 +167,7 @@ Contributions welcome — open an issue or PR.
 - [Bruce Pourciau](https://wiki.lyx.org/Examples/CV) (CV template)
 - [Culmus Project](https://culmus.sourceforge.io/)
 - [LyX](https://www.lyx.org/)
+- [D42ker GitHub theme](https://github.com/l3ony2k/Typora-D42ker-Github-theme) by Leon Wong (color theme inspiration)
 
 ## License
 

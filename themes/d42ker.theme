@@ -1,0 +1,140 @@
+#LyX version: 2.5.2
+#
+#   This is a definition file of a color theme "D42ker" of LyX
+#
+#   A clean, minimal theme: zero-saturation neutral scale, one warm red accent,
+#   a few muted hues reserved for math, labels and change tracking. Inspired by
+#   the D42ker GitHub theme for Typora
+#   (Leon Wong, github.com/l3ony2k/Typora-D42ker-Github-theme).
+#
+#   Palette                light      dark
+#     background           #fdfdfd    #191919
+#     surface              #f2f2f2    #212121
+#     surface raised       #e8e8e8    #2a2a2a
+#     rule / frame         #dcdcdc    #404040
+#     muted                #9a9a9a    #808080
+#     dim                  #6e6e6e    #b4b4b4
+#     foreground           #262626    #d0d0d0
+#     accent red           #ac0024    #feadaa     h  22
+#     blue                 #005da0    #8ec6ff     h 249
+#     green                #006f1a    #86d489     h 145
+#     plum                 #8e1a96    #f2a9f6     h 325
+#     orange               #8b4500    #feb079     h  55
+#     teal                 #006869    #26d5d7     h 196
+#     note background      #f6f1e3    #2b2721
+#
+#   Accents are built in OKLCH at the highest in-gamut chroma (C 0.13-0.16).
+#   Lightness is set by APCA rather than by eye. LyX draws most labels in a
+#   Small font, so both sides target the small-text band: light sits at L=0.47
+#   (Lc 80-84), dark is raised until |Lc| >= 68. WCAG 2 ratios flatter dark
+#   themes badly -- these read 5:1 there at lightnesses APCA scores near 40.
+#   The hues match the consensus of Modus, Catppuccin, Everforest, Solarized
+#   and Primer, all of which place blue at 236-263, red 20-29, orange 40-59
+#   and green 118-148 in OKLCH.
+#
+#   The five change-tracking author colors keep those hues but are staggered in
+#   lightness, so they stay separable under protanopia, deuteranopia and
+#   tritanopia (simulated with Brettel 1997), where hue alone collapses.
+#
+#   Order below: canvas, selection, buttons/frames, insets, notes, layout
+#   markers, math, labels, change tracking, feedback, tables.
+#
+#   Note: "selectionmath" is the *text* color of selected math, not a
+#   background (the background is "selection"); "deletedtextmodifier" is a
+#   brightness a deleted-text color is blended toward, not a color as such.
+#
+#   Author: Tom Bleher ()
+#
+#   Syntax: \set_color "color name" "light color" "dark color"
+#
+\set_color "background" "#fdfdfd" "#191919"
+\set_color "foreground" "#262626" "#d0d0d0"
+\set_color "foreground_inverted" "#fdfdfd" "#191919"
+\set_color "cursor" "#262626" "#d0d0d0"
+\set_color "cursor_inverted" "#fdfdfd" "#191919"
+\set_color "bottomarea" "#f2f2f2" "#212121"
+\set_color "graphicsbg" "#fdfdfd" "#191919"
+\set_color "shaded" "#f2f2f2" "#212121"
+\set_color "listingsbg" "#f7f7f7" "#1f1f1f"
+\set_color "selection" "#e2d7d7" "#663f3f"
+\set_color "selectiontext" "#1a1a1a" "#f0f0f0"
+\set_color "selectionmath" "#003967" "#d7eafe"
+\set_color "buttonbg" "#f2f2f2" "#212121"
+\set_color "buttonhoverbg" "#e8e8e8" "#2f2f2f"
+\set_color "buttonframe" "#dcdcdc" "#404040"
+\set_color "commandbg" "#f2f2f2" "#212121"
+\set_color "commandframe" "#dcdcdc" "#404040"
+\set_color "command" "#262626" "#d0d0d0"
+\set_color "commandbg_broken" "#f3e2e2" "#3a2626"
+\set_color "buttonhoverbg_broken" "#ecd6d6" "#472d2d"
+\set_color "commandframe_broken" "#ac0024" "#feadaa"
+\set_color "command_broken" "#6e0013" "#ffd1cf"
+\set_color "insetbg" "#f2f2f2" "#212121"
+\set_color "insetframe" "#dcdcdc" "#404040"
+\set_color "insetlabel" "#6e6e6e" "#b4b4b4"
+\set_color "collapsible" "#6e6e6e" "#b4b4b4"
+\set_color "collapsibleframe" "#dcdcdc" "#404040"
+\set_color "greyedoutbg" "#f2f2f2" "#212121"
+\set_color "greyedout" "#6e6e6e" "#b4b4b4"
+\set_color "greyedouttext" "#9a9a9a" "#808080"
+\set_color "phantomtext" "#9a9a9a" "#808080"
+\set_color "notebg" "#f6f1e3" "#2b2721"
+\set_color "note" "#262626" "#d0d0d0"
+\set_color "commentbg" "#f6f1e3" "#2b2721"
+\set_color "comment" "#262626" "#d0d0d0"
+\set_color "added_space" "#9a9a9a" "#808080"
+\set_color "appendix" "#9a9a9a" "#808080"
+\set_color "depthbar" "#cccccc" "#4a4a4a"
+\set_color "eolmarker" "#9a9a9a" "#808080"
+\set_color "newpage" "#9a9a9a" "#808080"
+\set_color "pagebreak" "#9a9a9a" "#808080"
+\set_color "paragraphmarker" "#dcdcdc" "#404040"
+\set_color "special" "#9a9a9a" "#808080"
+\set_color "scroll" "#ac0024" "#feadaa"
+\set_color "bookmark" "#ac0024" "#feadaa"
+\set_color "math" "#005da0" "#8ec6ff"
+\set_color "mathbg" "#fdfdfd" "#191919"
+\set_color "mathframe" "#005da0" "#8ec6ff"
+\set_color "mathline" "#005da0" "#8ec6ff"
+\set_color "mathcorners" "#dcdcdc" "#3a3a3a"
+\set_color "mathmacrobg" "#fdfdfd" "#191919"
+\set_color "mathmacroblend" "#262626" "#d0d0d0"
+\set_color "mathmacroframe" "#dcdcdc" "#404040"
+\set_color "mathmacrohoverbg" "#e8e8e8" "#2a2a2a"
+\set_color "mathmacrolabel" "#9a9a9a" "#808080"
+\set_color "mathmacronewarg" "#262626" "#d0d0d0"
+\set_color "mathmacrooldarg" "#9a9a9a" "#808080"
+\set_color "latex" "#8b4500" "#feb079"
+\set_color "language" "#005da0" "#8ec6ff"
+\set_color "footlabel" "#005da0" "#8ec6ff"
+\set_color "indexlabel" "#006f1a" "#86d489"
+\set_color "nomlabel" "#8b4500" "#feb079"
+\set_color "branchlabel" "#8b4500" "#feb079"
+\set_color "marginlabel" "#8e1a96" "#f2a9f6"
+\set_color "urllabel" "#ac0024" "#feadaa"
+\set_color "urltext" "#ac0024" "#feadaa"
+\set_color "textlabel1" "#005da0" "#8ec6ff"
+\set_color "textlabel2" "#006f1a" "#86d489"
+\set_color "textlabel3" "#8e1a96" "#f2a9f6"
+\set_color "changebar" "#005da0" "#8ec6ff"
+\set_color "addedtext" "#006f1a" "#86d489"
+\set_color "deletedtext" "#ac0024" "#feadaa"
+\set_color "deletedtextmodifier" "#f2f2f2" "#6e6e6e"
+\set_color "changedtextauthor1" "#0178ca" "#cce4fe"
+\set_color "changedtextauthor2" "#6d0075" "#f2a9f6"
+\set_color "changedtextauthor3" "#ac0024" "#ffc5c2"
+\set_color "changedtextauthor4" "#b05a02" "#ffddc7"
+\set_color "changedtextauthor5" "#005211" "#86d489"
+\set_color "changedtextcomparison" "#006869" "#26d5d7"
+\set_color "error" "#ac0024" "#feadaa"
+\set_color "regexpframe" "#006f1a" "#86d489"
+\set_color "inlinecompletion" "#9a9a9a" "#808080"
+\set_color "nonuniqueinlinecompletion" "#dcdcdc" "#404040"
+\set_color "preview" "#262626" "#d0d0d0"
+\set_color "previewframe" "#dcdcdc" "#404040"
+\set_color "preeditbg" "#fdfdfd" "#191919"
+\set_color "preedittext" "#262626" "#d0d0d0"
+\set_color "preeditfocus" "#e8e8e8" "#2a2a2a"
+\set_color "preeditfocustext" "#1a1a1a" "#f0f0f0"
+\set_color "tabularline" "#b0b0b0" "#5a5a5a"
+\set_color "tabularonoffline" "#c9c9c9" "#4a4a4a"
