@@ -47,6 +47,7 @@ cd lyx-he
 - Math auto-completion, OpenType math (STIX Two), hyperref cross-references
 - 5 document templates (article, solutions, CV) plus Hebrew defaults for new files
 - **d42ker** color theme installed and selected by default (LyX 2.5+)
+- Weekly LyX update check (LyX has no built-in updater); it always asks before updating
 
 <p align="center">
   <img src="screenshots/component-picker.png" alt="Interactive component picker" width="570">
