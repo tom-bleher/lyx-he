@@ -13,9 +13,9 @@ Based on the [Madlyx guide](https://mkali56.wixsite.com/madlyx) by Michael Kali.
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tom-bleher/lyx-he/main/install.sh)"
 ```
 
-One command. Safe to re-run: already-installed components are skipped, generated files are compared before replacement, and existing LyX config is backed up before overwrite.
+One command. Safe to re-run: already-installed components are skipped (re-run to update LyX to the latest release), generated files are compared before replacement, and existing LyX config is backed up before overwrite.
 
-> **Requires macOS** (Apple Silicon or Intel). Homebrew is set up automatically if needed.
+> **Requires macOS** (Apple Silicon or Intel). Homebrew is optional: if you have it, MacTeX and Noto fonts are installed through it; otherwise everything is downloaded directly from the official sources and verified.
 
 ```bash
 # Install all without prompting

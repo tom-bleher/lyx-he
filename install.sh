@@ -6,7 +6,7 @@
 # Installs: MacTeX, LyX, Culmus + Noto Hebrew fonts
 # Configures: Hebrew RTL, David CLM fonts, F12 language toggle, XeTeX output
 #
-# Prerequisites: macOS (Homebrew auto-installed if needed)
+# Prerequisites: macOS (Homebrew optional — used for MacTeX/Noto when present)
 # Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tom-bleher/lyx-he/main/install.sh)"
 #
 
@@ -373,6 +373,188 @@ has_noto_hebrew() {
     return 1
 }
 
+# ── LyX download & verification ──────────────────────
+# Homebrew's LyX cask is disabled (LyX isn't notarized), so LyX always comes
+# from lyx.org's primary server, checked against the LyX release signing key.
+LYX_BIN_URL="https://ftp.lip6.fr/pub/lyx/bin"
+LYX_MIN_VERSION="2.5.3"  # used if lyx.org is unreachable; never install older
+
+# "LyX Release Manager" key FE66471B43559707AFDAD955DE7A44FAC7FB382D, as listed
+# on https://www.lyx.org/Download, converted to PEM so stock openssl can use it.
+LYX_RELEASE_KEY='-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnlKZHJNc3WlD/f4Jzxi2
+ZhGmaQGy4TIfKRsavaq54YB8mfjvWa+yNKKq0ZIZakYmCmtWFHuf3zRPdXm0K4Di
+tyQXVi86g+UNfhpqNslcTKIfqD5S0BY/1+3K/hxROV1fL3ykHN786xHQ5roqAs3K
+LDY8SSl9kVv4gAnIznNTUDEFPX1ojMz/KB85L1jUCNGHewINGP8GVl50q5XGLai7
+MXUhNA2HtkfM7AWU287gUR2UYuM7fvWVIoU+KvxxsTApqUNxORdCZR+aSxgykSHn
+vYtwMlcVZUXw1fUwRierw0uBJZ91975olpPASKNQMHpqZJa/OVZc2Q4yHxeL5L9O
+gQIDAQAB
+-----END PUBLIC KEY-----'
+
+# Newest LyX release with a macOS build, per lyx.org (falls back to the floor).
+lyx_latest_version() {
+    local v
+    v=$(curl -fsSL --max-time 15 https://www.lyx.org/Download 2>/dev/null \
+        | grep -oE 'LyX-[0-9]+\.[0-9]+\.[0-9]+\+qt6-x86_64-arm64-cocoa\.dmg' \
+        | sed -E 's/^LyX-([0-9.]+)\+.*/\1/' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1) || true
+    if [ -z "$v" ] || lyx_version_gt "$LYX_MIN_VERSION" "$v"; then
+        v="$LYX_MIN_VERSION"
+    fi
+    echo "$v"
+}
+
+lyx_app_version() {
+    defaults read "$1/Contents/Info" CFBundleShortVersionString 2>/dev/null || true
+}
+
+# pgp_verify FILE SIG PEM — check an OpenPGP v4 detached RSA signature (the
+# format of LyX's .sig files) with openssl alone, so gpg isn't needed.
+pgp_verify() {
+    local file="$1" sig="$2" pem="$3" hex ctb p n hl ul bits md tmp rc=1
+    hex=$(od -An -v -tx1 "$sig" | tr -d ' \n') || return 1
+    _byte_int() { echo $((16#${hex:$(($1 * 2)):$(($2 * 2))})); }
+
+    # Packet header (tag 2 = signature), old or new format
+    ctb=$(_byte_int 0 1)
+    if [ "$ctb" -eq $((0xC2)) ]; then
+        n=$(_byte_int 1 1)
+        if   [ "$n" -lt 192 ]; then p=2
+        elif [ "$n" -lt 224 ]; then p=3
+        elif [ "$n" -eq 255 ]; then p=6
+        else return 1; fi
+    elif [ $((ctb & 0xFC)) -eq $((0x88)) ]; then
+        case $((ctb & 3)) in 0) p=2 ;; 1) p=3 ;; 2) p=5 ;; *) return 1 ;; esac
+    else
+        return 1
+    fi
+
+    # v4, signature over a binary document, RSA, SHA-256/512
+    [ "${hex:$((p * 2)):6}" = "040001" ] || return 1
+    case "${hex:$((p * 2 + 6)):2}" in 08) md=sha256 ;; 0a) md=sha512 ;; *) return 1 ;; esac
+    hl=$(_byte_int $((p + 4)) 2)
+    ul=$(_byte_int $((p + 6 + hl)) 2)
+    n=$((p + 8 + hl + ul + 2))   # skip the 2-byte hash prefix
+    bits=$(_byte_int "$n" 2)
+    [ "$bits" -ge 1 ] && [ "$bits" -le 2048 ] || return 1
+
+    tmp=$(mktemp -d) || return 1
+    # RSA signature value, left-padded to the 256-byte modulus
+    { printf '%*s' $(( (256 - (bits + 7) / 8) * 2 )) '' | tr ' ' 0
+      echo "${hex:$(((n + 2) * 2)):$(((bits + 7) / 8 * 2))}"; } | xxd -r -p > "$tmp/sig"
+    # Signed data = file + hashed signature fields + 04 FF + their length (32-bit)
+    { echo "${hex:$((p * 2)):$(((6 + hl) * 2))}04ff"; printf '%08x' $((6 + hl)); } \
+        | xxd -r -p > "$tmp/trailer"
+    printf '%s\n' "$pem" > "$tmp/key.pem"
+    cat "$file" "$tmp/trailer" \
+        | openssl dgst -"$md" -verify "$tmp/key.pem" -signature "$tmp/sig" >/dev/null 2>&1 && rc=0
+    rm -rf "$tmp"
+    return "$rc"
+}
+
+# install_lyx VERSION — download, verify and install (or replace) LyX.app
+install_lyx() {
+    local ver="$1" tmp mnt rc=0 dmg_url
+    dmg_url="$LYX_BIN_URL/$ver/LyX-$ver+qt6-x86_64-arm64-cocoa.dmg"
+
+    tmp=$(mktemp -d)
+    if ! run_with_spinner "Downloading LyX $ver from lyx.org" \
+        curl -fsSL --retry 3 -o "$tmp/lyx.dmg" "$dmg_url" -o "$tmp/lyx.dmg.sig" "$dmg_url.sig"; then
+        rm -rf "$tmp"; return 1
+    fi
+    if ! pgp_verify "$tmp/lyx.dmg" "$tmp/lyx.dmg.sig" "$LYX_RELEASE_KEY"; then
+        fail "LyX signature check failed — refusing to install unverified download"
+        rm -rf "$tmp"; return 1
+    fi
+    log "LyX $ver: valid signature by LyX release key"
+
+    mnt="$tmp/mnt"
+    mkdir -p "$mnt"
+    if ! hdiutil attach "$tmp/lyx.dmg" -mountpoint "$mnt" -nobrowse -quiet >> "$LOG_FILE" 2>&1; then
+        rm -rf "$tmp"; return 1
+    fi
+
+    if [ "$(lyx_app_version "$mnt/LyX.app")" != "$ver" ]; then
+        fail "LyX dmg does not contain LyX $ver"
+        rc=1
+    else
+        # Drop a leftover record of the disabled Homebrew cask (removes the old app)
+        if $HAS_BREW && brew list --cask lyx &>/dev/null; then
+            brew uninstall --cask lyx >> "$LOG_FILE" 2>&1 || true
+        fi
+        rm -rf "/Applications/LyX.app"
+        cp -R "$mnt/LyX.app" /Applications/ || rc=1
+    fi
+
+    hdiutil detach "$mnt" -quiet >> "$LOG_FILE" 2>&1 || true
+    rm -rf "$tmp"
+    return "$rc"
+}
+
+# ── Homebrew-free downloads ──────────────────────────
+HAS_BREW=false; command -v brew &>/dev/null && HAS_BREW=true
+
+# MacTeX: always-latest pkg from CTAN, checked against TUG's published SHA-512
+# and TUG's Apple Developer ID (the pkg is signed and notarized).
+MACTEX_URL="https://mirror.ctan.org/systems/mac/mactex/MacTeX.pkg"
+MACTEX_TEAM_ID="RBGCY5RJWM"
+
+install_mactex_direct() {
+    local tmp url rc=0
+    tmp=$(mktemp -d)
+    # mirror.ctan.org redirects to a random mirror; pin one so pkg and checksum match
+    url=$(curl -fsL -r 0-0 -o /dev/null -w '%{url_effective}' "$MACTEX_URL") || url=""
+    if [ -z "$url" ] || ! run_with_spinner "Downloading MacTeX (~6.5 GB)" \
+        curl -fsSL --retry 3 -o "$tmp/MacTeX.pkg" "$url" -o "$tmp/MacTeX.pkg.sha512" "$url.sha512"; then
+        rm -rf "$tmp"; return 1
+    fi
+    if ! (cd "$tmp" && shasum -a 512 -c MacTeX.pkg.sha512) >> "$LOG_FILE" 2>&1; then
+        fail "MacTeX checksum mismatch — refusing to install"
+        rm -rf "$tmp"; return 1
+    fi
+    if ! pkgutil --check-signature "$tmp/MacTeX.pkg" 2>/dev/null | tee -a "$LOG_FILE" \
+        | grep -q "Developer ID Installer: .*($MACTEX_TEAM_ID)"; then
+        fail "MacTeX package is not signed by TUG — refusing to install"
+        rm -rf "$tmp"; return 1
+    fi
+    run_with_spinner "Installing MacTeX" sudo installer -pkg "$tmp/MacTeX.pkg" -target / || rc=1
+    rm -rf "$tmp"
+    return "$rc"
+}
+
+# Year of the pkg-installed MacTeX (e.g. 2026), from its installer receipt
+mactex_pkg_year() {
+    pkgutil --pkgs 2>/dev/null | sed -nE 's/^org\.tug\.mactex\.texlive([0-9]{4})$/\1/p' | sort | tail -1
+}
+
+# Noto Hebrew: the Homebrew casks, or the same files from google/fonts
+# (pinned commit + sha256, since google/fonts publishes no checksums).
+NOTO_CASKS=(font-noto-sans-hebrew font-noto-serif-hebrew font-noto-rashi-hebrew)
+NOTO_FILES=("NotoSansHebrew[wdth,wght].ttf" "NotoSerifHebrew[wdth,wght].ttf" "NotoRashiHebrew[wght].ttf")
+NOTO_SHA256=(
+    7ef36a2c3593758cdb622e1bdef4f84523e92fbc3ccc667438dd80ff54c2de88
+    93caef921360788dc3b0e32136bb26f16bc57717ec482d48fc7fd43820617165
+    4da0058f46aa66f9a334967a640a1e56abb642eba3c1c3fc5080f6282c9eb126
+)
+NOTO_URL="https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl"
+
+# install_noto_direct INDEX... — download the given NOTO_FILES into ~/Library/Fonts
+install_noto_direct() {
+    local i f dir tmp
+    mkdir -p "$HOME/Library/Fonts"
+    for i in "$@"; do
+        f="${NOTO_FILES[i]}"
+        dir=$(echo "${f%%\[*}" | tr '[:upper:]' '[:lower:]')
+        tmp=$(mktemp) || return 1
+        if ! curl -fsSL --retry 3 -o "$tmp" "$NOTO_URL/$dir/$(echo "$f" | sed 's/\[/%5B/; s/\]/%5D/; s/,/%2C/')" \
+            || ! echo "${NOTO_SHA256[i]}  $tmp" | shasum -a 256 -c - >/dev/null; then
+            rm -f "$tmp"; return 1
+        fi
+        chmod 644 "$tmp"
+        mv "$tmp" "$HOME/Library/Fonts/$f" || return 1
+        manifest_add font "$HOME/Library/Fonts/$f"
+    done
+}
+
 # ── Flags ────────────────────────────────────────────
 FORCE=false
 UNINSTALL=false
@@ -616,9 +798,14 @@ if $UNINSTALL; then
     fi
 
     _CULMUS_MANAGED=()
+    _NOTO_MANAGED=()   # Noto files downloaded directly (no Homebrew)
     if [ -f "$MANIFEST_FILE" ]; then
         while IFS=$'\t' read -r _type _value; do
-            [ "$_type" = "font" ] && [ -f "$_value" ] && _CULMUS_MANAGED+=("$_value")
+            [ "$_type" = "font" ] && [ -f "$_value" ] || continue
+            case "$_value" in
+                */Noto*) _NOTO_MANAGED+=("$_value") ;;
+                *)       _CULMUS_MANAGED+=("$_value") ;;
+            esac
         done < "$MANIFEST_FILE"
     fi
     if [ "${#_CULMUS_MANAGED[@]}" -gt 0 ]; then
@@ -628,30 +815,34 @@ if $UNINSTALL; then
     fi
 
     _NOTO_INSTALLED=()
-    for cask in font-noto-sans-hebrew font-noto-serif-hebrew font-noto-rashi-hebrew; do
-        manifest_has cask "$cask" && brew list --cask "$cask" &>/dev/null && _NOTO_INSTALLED+=("$cask")
+    for cask in "${NOTO_CASKS[@]}"; do
+        manifest_has cask "$cask" && $HAS_BREW && brew list --cask "$cask" &>/dev/null && _NOTO_INSTALLED+=("$cask")
     done
-    if [ "${#_NOTO_INSTALLED[@]}" -gt 0 ]; then
-        TUI_ITEMS+=("Managed Noto Hebrew fonts (${#_NOTO_INSTALLED[@]} casks)")
+    if [ $(( ${#_NOTO_INSTALLED[@]} + ${#_NOTO_MANAGED[@]} )) -gt 0 ]; then
+        TUI_ITEMS+=("Managed Noto Hebrew fonts")
         TUI_CHECKED+=(0)
         UNINSTALL_ACTIONS+=("noto")
     fi
 
-    if manifest_has cask lyx && brew list --cask lyx &>/dev/null; then
+    if manifest_has cask lyx && $HAS_BREW && brew list --cask lyx &>/dev/null; then
         TUI_ITEMS+=("Managed LyX application")
         TUI_CHECKED+=(0)
         UNINSTALL_ACTIONS+=("lyx")
     elif manifest_has app "/Applications/LyX.app" && [ -d "/Applications/LyX.app" ]; then
-        # Installed via the direct-download fallback, not Homebrew
+        # Installed by direct download, not Homebrew
         TUI_ITEMS+=("Managed LyX application")
         TUI_CHECKED+=(0)
         UNINSTALL_ACTIONS+=("lyx-app")
     fi
 
-    if manifest_has cask mactex && brew list --cask mactex &>/dev/null; then
+    if manifest_has cask mactex && $HAS_BREW && brew list --cask mactex &>/dev/null; then
         TUI_ITEMS+=("Managed MacTeX (~6 GB)")
         TUI_CHECKED+=(0)
         UNINSTALL_ACTIONS+=("mactex")
+    elif manifest_has pkg mactex && [ -n "$(mactex_pkg_year)" ]; then
+        TUI_ITEMS+=("Managed MacTeX $(mactex_pkg_year) (~6 GB)")
+        TUI_CHECKED+=(0)
+        UNINSTALL_ACTIONS+=("mactex-pkg")
     fi
 
     if [ ${#TUI_ITEMS[@]} -eq 0 ]; then
@@ -688,7 +879,7 @@ if $UNINSTALL; then
 
     _uninstall_needs_sudo=false
     for ((i = 0; i < ${#UNINSTALL_ACTIONS[@]}; i++)); do
-        [ "${TUI_CHECKED[i]}" = "1" ] && [ "${UNINSTALL_ACTIONS[i]}" = "mactex" ] && _uninstall_needs_sudo=true
+        [ "${TUI_CHECKED[i]}" = "1" ] && [[ "${UNINSTALL_ACTIONS[i]}" = mactex* ]] && _uninstall_needs_sudo=true
     done
     if $_uninstall_needs_sudo; then sudo_init; fi
 
@@ -737,7 +928,11 @@ if $UNINSTALL; then
                 done
                 ;;
             noto)
-                for cask in "${_NOTO_INSTALLED[@]}"; do
+                for font in ${_NOTO_MANAGED[@]+"${_NOTO_MANAGED[@]}"}; do
+                    [ -f "$font" ] && rm "$font" && ok "Removed $(basename "$font")"
+                    manifest_remove font "$font"
+                done
+                for cask in ${_NOTO_INSTALLED[@]+"${_NOTO_INSTALLED[@]}"}; do
                     if brew uninstall --cask "$cask" 2>/dev/null; then
                         ok "Removed $cask"
                         manifest_remove cask "$cask"
@@ -768,6 +963,20 @@ if $UNINSTALL; then
                     manifest_remove cask mactex
                 else
                     warn "Failed to remove MacTeX via Homebrew"
+                fi
+                ;;
+            mactex-pkg)
+                # Same paths Homebrew's mactex cask removes (TUG's uninstall guide)
+                _year=$(mactex_pkg_year)
+                if sudo rm -rf "/usr/local/texlive/$_year" /Applications/TeX /Library/TeX \
+                    /etc/paths.d/TeX /etc/manpaths.d/TeX; then
+                    for _pkg in texlive gui; do
+                        sudo pkgutil --forget "org.tug.mactex.$_pkg$_year" >/dev/null 2>&1 || true
+                    done
+                    ok "Removed MacTeX $_year"
+                    manifest_remove pkg mactex
+                else
+                    warn "Failed to remove MacTeX"
                 fi
                 ;;
         esac
@@ -962,39 +1171,12 @@ echo ""
 
 header "Prerequisites"
 
-if ! command -v brew &>/dev/null; then
-    warn "Homebrew is not installed"
-    if [ -t 0 ]; then
-        echo -ne "  Install Homebrew now? [Y/n] "
-        read -r _brew_confirm
-        case "$_brew_confirm" in
-            [nN]|[nN][oO])
-                fail "Homebrew is required. Install it from https://brew.sh"
-                exit 1
-                ;;
-        esac
-        info "Installing Homebrew (this will ask for your password)..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-        # Add brew to PATH for the rest of this script (Apple Silicon vs Intel)
-        if [ -f /opt/homebrew/bin/brew ]; then
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        elif [ -f /usr/local/bin/brew ]; then
-            eval "$(/usr/local/bin/brew shellenv)"
-        fi
-        ensure_tool_paths
-
-        if ! command -v brew &>/dev/null; then
-            fail "Homebrew installation failed"
-            exit 1
-        fi
-        ok "Homebrew installed"
-    else
-        fail "Homebrew is required. Install it from https://brew.sh"
-        exit 1
-    fi
+# Homebrew is optional: when present it installs MacTeX and Noto fonts (so
+# `brew upgrade` keeps them current); otherwise everything is downloaded directly.
+if $HAS_BREW; then
+    ok "Homebrew found — used for MacTeX and Noto fonts"
 else
-    ok "Homebrew found"
+    info "Homebrew not found — using direct downloads"
 fi
 
 # ── Detect installed components ───────────────────────
@@ -1002,14 +1184,21 @@ fi
 detect_lyx_dir
 
 _HAS_MACTEX=false; [ -f /Library/TeX/texbin/xelatex ] && _HAS_MACTEX=true
-_HAS_LYX=false;    [ -d "/Applications/LyX.app" ]     && _HAS_LYX=true
 _HAS_CULMUS=false; if has_david_clm; then _HAS_CULMUS=true; fi
 CULMUS_VERSION="0.140"
 
-NOTO_FONTS=(font-noto-sans-hebrew font-noto-serif-hebrew font-noto-rashi-hebrew)
+_HAS_LYX=false; _LYX_OUTDATED=false
+LYX_INSTALLED=$(lyx_app_version /Applications/LyX.app)
+LYX_LATEST=$(lyx_latest_version)
+if [ -d /Applications/LyX.app ]; then
+    _HAS_LYX=true
+    lyx_version_gt "$LYX_LATEST" "${LYX_INSTALLED:-0}" && _LYX_OUTDATED=true
+fi
+
 NOTO_MISSING=()
-for cask in "${NOTO_FONTS[@]}"; do
-    brew list --cask "$cask" &>/dev/null || NOTO_MISSING+=("$cask")
+for ((i = 0; i < ${#NOTO_FILES[@]}; i++)); do
+    [ -f "$HOME/Library/Fonts/${NOTO_FILES[i]}" ] || [ -f "/Library/Fonts/${NOTO_FILES[i]}" ] \
+        || NOTO_MISSING+=("$i")
 done
 _HAS_NOTO=false; [ ${#NOTO_MISSING[@]} -eq 0 ] && _HAS_NOTO=true
 
@@ -1030,7 +1219,9 @@ INSTALL_ACTIONS=()
 _label="MacTeX — full TeX Live distribution (~6 GB)";    $_HAS_MACTEX && _label+=" (installed)"
 TUI_ITEMS+=("$_label"); TUI_CHECKED+=(1); INSTALL_ACTIONS+=("mactex")
 
-_label="LyX — WYSIWYM document editor";                  $_HAS_LYX && _label+=" (installed)"
+_label="LyX — WYSIWYM document editor"
+if $_LYX_OUTDATED; then _label+=" (update ${LYX_INSTALLED:-?} → $LYX_LATEST)"
+elif $_HAS_LYX; then _label+=" (installed)"; fi
 TUI_ITEMS+=("$_label"); TUI_CHECKED+=(1); INSTALL_ACTIONS+=("lyx")
 
 _label="Culmus Hebrew fonts (David CLM, Miriam, etc.)";  $_HAS_CULMUS && _label+=" (installed)"
@@ -1097,7 +1288,8 @@ done
 
 _needed_gb=1  # base overhead for fonts + config
 # Only count MacTeX when it will actually be installed (selected but present is a skip)
-if is_selected "mactex" && ! $_HAS_MACTEX; then _needed_gb=$((_needed_gb + 8)); fi
+# ~6.5 GB download + ~8 GB installed
+if is_selected "mactex" && ! $_HAS_MACTEX; then _needed_gb=$((_needed_gb + 15)); fi
 _avail_gb=$(df -g "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
 [[ "$_avail_gb" =~ ^[0-9]+$ ]] || _avail_gb=""
 if [ -n "$_avail_gb" ] && [ "$_avail_gb" -lt "$_needed_gb" ]; then
@@ -1146,14 +1338,20 @@ if is_selected "mactex"; then
     if $_HAS_MACTEX; then
         ok "MacTeX already installed — skipped"
     else
-        info "Downloading ~6 GB — this will take a while"
-        if ! run_with_spinner "Installing MacTeX" brew install --cask mactex; then
+        info "Downloading ~6.5 GB — this will take a while"
+        if $HAS_BREW; then
+            run_with_spinner "Installing MacTeX" brew install --cask mactex || _mactex_failed=1
+            # Track right away — even if the PATH refresh below fails,
+            # uninstall should still know we installed it.
+            [ -z "${_mactex_failed:-}" ] && manifest_add cask mactex
+        else
+            install_mactex_direct || _mactex_failed=1
+            [ -z "${_mactex_failed:-}" ] && manifest_add pkg mactex
+        fi
+        if [ -n "${_mactex_failed:-}" ]; then
             fail "MacTeX installation failed. Try again, or install manually from https://www.tug.org/mactex/"
             exit 1
         fi
-        # Track the cask right away — even if the PATH refresh below fails,
-        # uninstall should still know we installed it.
-        manifest_add cask mactex
         eval "$(/usr/libexec/path_helper)" 2>/dev/null
         ensure_tool_paths
         if [ -f /Library/TeX/texbin/xelatex ]; then
@@ -1166,74 +1364,23 @@ fi
 
 # ── Install: LyX ────────────────────────────────────
 
-# Direct-download fallback for when the Homebrew cask is unavailable.
-# Same universal (x86_64 + arm64) dmg and sha256 the cask pins.
-LYX_DMG_VERSION="2.5.1"
-LYX_DMG_SHA256="1c3a8cbf7c81e9d06b53e1ba291119363881b347722816cf53b6b912b3589370"
-LYX_DMG_URL="https://ftp.lip6.fr/pub/lyx/bin/${LYX_DMG_VERSION}/LyX-${LYX_DMG_VERSION}+qt6-x86_64-arm64-cocoa.dmg"
-
-install_lyx_direct() {
-    local dmg_tmp mnt rc=0
-
-    dmg_tmp=$(mktemp -d)
-    if ! run_with_spinner "Downloading LyX ${LYX_DMG_VERSION} from lyx.org mirror" \
-        curl -fsSL -o "$dmg_tmp/lyx.dmg" "$LYX_DMG_URL"; then
-        rm -rf "$dmg_tmp"
-        return 1
-    fi
-
-    if ! echo "$LYX_DMG_SHA256  $dmg_tmp/lyx.dmg" | shasum -a 256 -c - >/dev/null 2>&1; then
-        fail "LyX dmg checksum mismatch — refusing to install unverified download"
-        rm -rf "$dmg_tmp"
-        return 1
-    fi
-
-    mnt="$dmg_tmp/mnt"
-    mkdir -p "$mnt"
-    if ! hdiutil attach "$dmg_tmp/lyx.dmg" -mountpoint "$mnt" -nobrowse -quiet >> "$LOG_FILE" 2>&1; then
-        rm -rf "$dmg_tmp"
-        return 1
-    fi
-
-    if [ -d "$mnt/LyX.app" ]; then
-        [ -d "/Applications/LyX.app" ] && rm -rf "/Applications/LyX.app"
-        cp -R "$mnt/LyX.app" /Applications/ || rc=1
-    else
-        rc=1
-    fi
-
-    hdiutil detach "$mnt" -quiet >> "$LOG_FILE" 2>&1 || true
-    rm -rf "$dmg_tmp"
-    return "$rc"
-}
-
 if is_selected "lyx"; then
     step "LyX"
-    if $_HAS_LYX; then
-        ok "LyX already installed — skipped"
+    if $_HAS_LYX && ! $_LYX_OUTDATED; then
+        ok "LyX $LYX_INSTALLED already installed — skipped"
+    elif $_HAS_LYX && pgrep -xq lyx; then
+        warn "LyX is running — quit it and re-run to update to $LYX_LATEST"
     else
-        # The LyX Homebrew cask is deprecated (Gatekeeper issue; disabled after
-        # Sept 2026). Fall back to a checksummed download from the official mirror.
-        _lyx_via_cask=false
-        if run_with_spinner "Installing LyX" brew install --cask lyx; then
-            _lyx_via_cask=true
-        else
-            warn "Homebrew LyX cask failed — falling back to direct download"
-            if ! install_lyx_direct; then
-                fail "LyX installation failed. Download manually from https://www.lyx.org/Download"
-                exit 1
-            fi
-        fi
-        if [ -d "/Applications/LyX.app" ]; then
-            if $_lyx_via_cask; then
-                manifest_add cask lyx
-            else
-                manifest_add app "/Applications/LyX.app"
-            fi
-            ok "LyX installed ${DIM}($(fmt_elapsed))${NC}"
-        else
+        if ! install_lyx "$LYX_LATEST"; then
             fail "LyX installation failed. Download manually from https://www.lyx.org/Download"
             exit 1
+        fi
+        manifest_remove cask lyx
+        manifest_add app "/Applications/LyX.app"
+        if $_HAS_LYX; then
+            ok "LyX updated $LYX_INSTALLED → $LYX_LATEST ${DIM}($(fmt_elapsed))${NC}"
+        else
+            ok "LyX $LYX_LATEST installed ${DIM}($(fmt_elapsed))${NC}"
         fi
     fi
 fi
@@ -1295,14 +1442,21 @@ if is_selected "noto"; then
     step "Noto Hebrew fonts"
     if $_HAS_NOTO; then
         ok "Noto Hebrew fonts already installed — skipped"
-    else
-        if run_with_spinner "Installing Noto Hebrew fonts" brew install --cask "${NOTO_MISSING[@]}"; then
-            for cask in "${NOTO_MISSING[@]}"; do manifest_add cask "$cask"; done
+    elif $HAS_BREW; then
+        _casks=()
+        for i in "${NOTO_MISSING[@]}"; do _casks+=("${NOTO_CASKS[i]}"); done
+        if run_with_spinner "Installing Noto Hebrew fonts" brew install --cask "${_casks[@]}"; then
+            for cask in "${_casks[@]}"; do manifest_add cask "$cask"; done
             ok "Noto Hebrew fonts installed ${DIM}($(fmt_elapsed))${NC}"
         else
             fail "Noto Hebrew font installation failed"
             exit 1
         fi
+    elif run_with_spinner "Downloading Noto Hebrew fonts" install_noto_direct "${NOTO_MISSING[@]}"; then
+        ok "Noto Hebrew fonts installed ${DIM}($(fmt_elapsed))${NC}"
+    else
+        fail "Noto Hebrew font installation failed"
+        exit 1
     fi
 fi
 
