@@ -167,6 +167,10 @@ LyX/TeX can't handle Hebrew in paths. Use English-only directory names.
 
 Contributions welcome — open an issue or PR.
 
+## Support
+
+[☕ Buy Me a Coffee](https://buymeacoffee.com/tombleher)
+
 ## Credits
 
 - [Madlyx guide](https://mkali56.wixsite.com/madlyx) by Michael Kali
